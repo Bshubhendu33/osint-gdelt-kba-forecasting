@@ -1,0 +1,865 @@
+%=====================================================================
+% OSINT Topic 1 — IEEE conference paper
+% M.Sc. AI-Enhanced OSINT, SRH University Heidelberg (Prof. Schwarz)
+%
+% SOURCE OF TRUTH: osint_topic1_fuelcost_pipeline.ipynb
+%   Labelling executed at seeds 1234, 5678, 9012 with identical output.
+%   + the stationarity patch (ADF, first-differencing) added at Stage 3.
+% All reported figures come from a single execution of the notebook:
+% the original Stage 3 output (levels) and the stationarity patch
+% (ADF + first-differencing) run in the same session.
+%=====================================================================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Fuel- and Energy-Cost Media Discourse as a Leading Indicator of
+German Powertrain Registrations: A Stationarity-Corrected GDELT--KBA Null
+Result\\
+\thanks{Course project, M.Sc.\ AI-Enhanced OSINT, SRH University
+Heidelberg (Prof.\ Dr.\ K.\ D.\ Schwarz), Summer Semester 2026.}}
+
+\author{
+\IEEEauthorblockN{Shubhendu Banerjee}
+\IEEEauthorblockA{\textit{Dept.\ of Technology and Architecture}\\
+\textit{SRH University of Applied Sciences}\\ Heidelberg, Germany\\
+ba.shubhendu@gmail.com}
+\and
+\IEEEauthorblockN{Sacharith Reddy Jambula}
+\IEEEauthorblockA{\textit{Dept.\ of Technology and Architecture}\\
+\textit{SRH University of Applied Sciences}\\ Heidelberg, Germany\\
+sacharithrjambula@gmail.com}
+\and
+\IEEEauthorblockN{Atharva Shekhar Jadhav}
+\IEEEauthorblockA{\textit{Dept.\ of Technology and Architecture}\\
+\textit{SRH University of Applied Sciences}\\ Heidelberg, Germany\\
+atharvaj567@gmail.com}
+\and
+\IEEEauthorblockN{Farhan Siddique Mohammed}
+\IEEEauthorblockA{\textit{Dept.\ of Technology and Architecture}\\
+\textit{SRH University of Applied Sciences}\\ Heidelberg, Germany\\
+farhansiddique007890@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Open-source discourse is increasingly proposed as an early signal for economic
+and consumer behaviour, yet its predictive value for durable-goods markets is
+rarely tested with a falsifiable threshold. This paper asks whether the
+intensity, thematic composition, and tone of German fuel- and energy-cost news
+discourse lead monthly new-vehicle registration shifts across diesel,
+battery-electric, and hybrid powertrain categories. We apply a three-stage
+open-source intelligence pipeline to 291{,}936 German-language fuel and energy
+records from the GDELT Global Knowledge Graph spanning January 2022 to April
+2026. Records are embedded with a sentence-transformer model, grouped into 334
+discourse communities by weighted community detection, and each community
+centroid is labelled once by a grammar-constrained Mistral Nemo 12B classifier
+restricted to a seven-value theme taxonomy, so that no record is classified
+individually and no label is assigned by hand. Three monthly discourse series
+are validated against Kraftfahrt-Bundesamt registration shares over 52 aligned
+months. Analysed as levels, the pipeline yields an apparently strong result:
+fuel-tag discourse correlates with the hybrid share at $r=-0.698$ and
+Granger-predicts it at $p=0.033$. Augmented Dickey-Fuller tests show that the
+diesel and hybrid registration shares carry a unit root, so these level results
+are spurious. After first-differencing, the smallest p-value across sixteen
+tests rises to 0.080, no result approaches the Bonferroni threshold of 0.0031,
+and every best-lag bootstrap confidence interval spans the full tested window of
+minus six to plus six months. We report a clean, reproducible null, and we
+document the level-to-differenced gap as a methodological finding about
+discourse-based leading-indicator designs.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Open-source intelligence, GDELT, community detection, large language models,
+Granger causality, stationarity, spurious regression, vehicle registrations,
+null result
+\end{IEEEkeywords}
+
+%=====================================================================
+\section{Introduction}
+%=====================================================================
+The German passenger-car market is undergoing a structural shift in powertrain
+composition. The diesel share of new registrations falls from 0.216 in January
+2022 to 0.130 in April 2026, while battery-electric and hybrid vehicles absorb
+the released share in an uneven, policy-sensitive pattern. Anticipating these
+shifts a few months ahead would carry operational value for manufacturers,
+suppliers, grid planners, and policymakers. Because fuel and energy cost is a
+plausible economic driver of the choice between combustion and electrified
+powertrains, we ask a question that open-source intelligence (OSINT) is well
+placed to address. Does public discourse about fuel and energy cost move before
+the registration market, or does it merely react to it?
+
+A growing literature reports that media sentiment and search interest carry
+predictive information for vehicle and new-energy-vehicle sales
+\cite{wijnhoven2017}, \cite{shao2025}, \cite{liu2025}. Most of these studies
+operate on curated sentiment corpora and optimise forecast accuracy. Far less
+attention is paid to whether a fully open, event-scale source such as the GDELT
+Global Knowledge Graph \cite{gdelt2013} carries a signal specific enough to lead
+registration behaviour at powertrain granularity, and whether any such lead
+survives external validation against an official series the researcher does not
+construct.
+
+We address this gap for the German market. Our research question is the
+following. To what extent do shifts in the intensity, thematic composition, and
+tone of German fuel- and energy-cost discourse in GDELT precede shifts in
+Kraftfahrt-Bundesamt (KBA) monthly registration shares for diesel,
+battery-electric, and hybrid vehicles, and is the lead time operationally
+useful? We fix a falsifiable threshold in advance. The signal is useful only if
+the estimated lead time has a bootstrap confidence interval that excludes zero.
+If the interval crosses zero, or if no series predicts its registration share on
+stationary data, the study reports a null.
+
+This paper makes four contributions.
+\begin{itemize}
+\item \textbf{A community-then-label OSINT pipeline.} We classify discourse
+communities rather than individual records, so a single constrained
+language-model call describes each of 334 communities and every record inherits
+its community's theme. This removes per-record classifier drift and eliminates
+the hand-assigned labels that a stance-mapping design would require.
+\item \textbf{A reproducible validation framework.} Every step from stationarity
+testing through Granger causality to bootstrap intervals is specified with fixed
+parameters and released, providing a template against which a claimed
+discourse-based leading indicator can be judged.
+\item \textbf{A demonstration that stationarity testing eliminates a false
+discovery.} Our own level-based analysis produces a correlation of $-0.698$ and
+a Granger p-value of 0.033 for fuel discourse against the hybrid registration
+share. We show that both series carry a unit root and that the relationship
+disappears under first-differencing, with the same cell rising to $p=0.279$.
+\item \textbf{An evidence-based null.} Under the falsifiable
+threshold, no discourse series leads any registration share on stationary data.
+We report this as a documented negative result, and we note that the knowledge
+graph tags no explicit electric-vehicle vocabulary anywhere in this corpus.
+\end{itemize}
+
+The remainder of this paper is organised as follows. Section~II reviews related
+work. Section~III describes the methodology. Section~IV reports the case study.
+Section~V presents results. Section~VI discusses interpretation and threats to
+validity, and Section~VII concludes.
+
+%=====================================================================
+\section{Related Work}
+%=====================================================================
+We position this study across four strands: sentiment signals for vehicle
+demand, text and news as data for economic forecasting, sequence and OSINT
+forecasting systems, and the econometrics of validating a discourse signal.
+
+\subsection{Sentiment Signals for Vehicle Demand}
+Consumer sentiment and online attention carry predictive information for car
+sales. Combining social-media sentiment with search-trend indices improves
+short-horizon forecasts, although raw sentiment often adds little once volume
+and search interest are present \cite{wijnhoven2017}. Recent work on new-energy
+vehicles shows that media-sentiment features raise the accuracy of
+machine-learning sales models \cite{shao2025} and that hybrid
+sentiment-and-decomposition architectures lower electric-vehicle forecast error
+\cite{liu2025}. These studies establish sentiment as a useful covariate, but
+they use curated corpora, target aggregate sales, and optimise accuracy rather
+than test a directional lead with a falsifiable threshold. None reports
+stationarity handling for the series it correlates.
+
+\subsection{Text and News as Data for Economic Forecasting}
+A parallel literature treats text itself as economic data \cite{gentzkow2019}.
+Newspaper-derived indicators materially improve forecasts of GDP, inflation, and
+unemployment relative to standard baselines \cite{kalamara2022}, and
+statistically filtered knowledge graphs built from global news improve forecasts
+of industrial production \cite{tilly2021}. Their handling of non-stationarity is
+directly relevant to our design. Kalamara et al.\ forecast growth rates rather
+than levels and evaluate out of sample, so the trending component of both the
+text signal and the outcome is removed before any claim is made
+\cite{kalamara2022}, and Tilly and Livan likewise model changes in industrial
+production rather than the index itself \cite{tilly2021}. Both therefore avoid
+the level-regression problem by construction rather than by explicit unit-root
+testing. We make that step explicit instead, testing every series with an
+augmented Dickey-Fuller test and reporting the level analysis alongside the
+differenced one. This work demonstrates that news text can lead macroeconomic
+aggregates, but it does not address a powertrain-resolved consumer-durable
+outcome validated against an official registration series.
+
+\subsection{Sequence and OSINT Forecasting Systems}
+Transformer architectures now dominate long-horizon time-series forecasting
+\cite{informer2021}, and large language models have been applied directly as
+zero-shot forecasters \cite{gruver2023}. In the OSINT setting, event-based systems such as
+EMBERS forecast civil unrest from open indicators in near real time
+\cite{embers2014}, and GDELT tone and theme fields have served as socioeconomic
+sensors \cite{gdelt2013}, \cite{bollen2011}. Surveys of the field map its
+opportunities and open challenges \cite{osint2020}. These systems are powerful
+but data-hungry, and their evaluation rarely states a threshold at which the
+signal would be declared absent.
+
+\subsection{Operationalising and Validating a Discourse Signal}
+Instruction-tuned language models classify text without task-specific training
+data \cite{brown2020}, and grammar-constrained decoding restricts output to a
+fixed schema, which makes structured labelling reproducible \cite{willard2023}.
+Such classifiers remain reliable only while the target vocabulary is present in
+the input, because a constrained model returns a valid label even when the
+distinctions its taxonomy encodes are absent, and the failure is silent. This
+consideration motivates our decision to label communities rather than records,
+and to select a theme taxonomy grounded in the tags the corpus demonstrably
+carries. Embeddings for the clustering step follow the Sentence-BERT family
+\cite{reimers2019}, and the labelling model is Mistral Nemo \cite{mistralnemo}.
+
+On the validation side the tools are established. Cross-correlation locates
+alignment across lags, Granger causality tests whether one series improves
+prediction of another beyond its own past \cite{granger1969}, and bootstrap
+resampling gives confidence intervals for the estimated lead \cite{efron1993}.
+Because both discourse and registration series can trend, spurious-regression
+risk is central: Granger and Newbold showed that independent random walks test
+significant at conventional levels in the majority of trials, and that
+differencing is the standard remedy \cite{grangernewbold1974}. Stationarity is
+assessed with the augmented Dickey-Fuller test \cite{dickeyfuller1979}. These
+tools have been applied to news-derived series for mobility and macroeconomic
+prediction \cite{mobility2021}, and surveys of sentiment-driven econometrics
+stress their necessity \cite{algaba2020}.
+
+\subsection{Positioning}
+Prior work shows that sentiment predicts vehicle demand, that news text can lead
+economic aggregates, and that discourse signals can be validated
+econometrically. No prior study combines these into a powertrain-resolved,
+stationarity-corrected leading-indicator test for the German market, externally
+validated against KBA registrations under a falsifiable
+threshold. This paper fills that gap, and reports the size of the error that
+omitting the stationarity step would have produced.
+
+%=====================================================================
+\section{Methodology}
+%=====================================================================
+We follow the three-stage OSINT model. Stage one assembles and validates a
+fuel-discourse corpus. Stage two embeds records, detects discourse communities,
+and labels each community centroid. Stage three builds monthly series and
+validates them against registration data with stationarity-aware econometrics.
+
+\subsection{Data Collection and the Corpus Validation Gate}
+The corpus is a subset of the GDELT 2.0 Global Knowledge Graph
+\cite{gdelt2013}, retrieved through BigQuery and filtered server-side to German
+fuel, energy, and automotive coverage. It contains 291{,}936 records covering
+January 2022 to April 2026, each carrying a timestamp, a document identifier,
+the raw theme list, persons, organizations, and the GDELT tone fields.
+
+Before any pipeline stage runs, the corpus passes a validation gate that
+confirms the target signal is present. Of 291{,}936 records, 275{,}880
+(94.5\,\%) carry at least one fuel or energy-price theme, with
+\texttt{FUELPRICES} on 254{,}040 records, \texttt{ECON\_HEATINGOIL} on
+67{,}701, and \texttt{ECON\_GASOLINEPRICE} on 52{,}266. This gate is a direct
+response to a diagnostic finding reported in Section~IV, and it is the reason
+the discourse construct is fuel and energy cost rather than powertrain stance.
+
+\subsection{Document Representation}
+A GKG record carries no article body text, so a text representation must be
+constructed from its structured fields. We concatenate human-readable theme
+codes with named organizations and persons, which groups records by subject
+and actor jointly. Two documented cleaning rules apply. First, GDELT
+scaffolding theme families that tokenize into non-topical fragments are removed
+by prefix rule, covering \texttt{TAX\_WORLDLANGUAGES}, \texttt{TAX\_ETHNICITY},
+\texttt{TAX\_FNCACT}, \texttt{CRISISLEX}, \texttt{UNGP},
+\texttt{USPEC\_POLITICS}, and \texttt{MEDICAL} families among others; the
+complete prefix list is fixed in the released code.
+Second, a document-frequency cutoff removes tokens appearing in more than
+40\,\% of records, computed on the final lowercased tokens; this removed 24
+tokens. After cleaning, 291{,}291 records carry a usable representation.
+
+\subsection{Embedding and Community Detection}
+Records are embedded with all-MiniLM-L6-v2 \cite{reimers2019} as L2-normalised
+384-dimensional vectors. Because theme and organization strings repeat heavily,
+the 291{,}291 records collapse to 241{,}277 unique strings; identical strings
+yield identical embeddings and therefore fall in the same community, so only
+unique strings are embedded, each weighted by the number of records it
+represents. This makes detection tractable in memory without altering the
+partition. Greedy cosine-similarity community detection runs at a threshold of
+0.70 with a minimum community size of 250 records, producing 334 communities
+covering 203{,}766 records, or 70.0\,\% of the corpus. Each community is
+summarised by its centroid and the eight member records nearest to it.
+
+\subsection{Community-Then-Label Classification}
+Records are never classified individually. Discovery and categorisation are kept
+separate: community detection finds the structure, and the language model maps
+each discovered structure to a theme, after which every record inherits its
+community's label. This design choice matters for validity. Per-record
+classification of 291{,}291 items would invite label drift across calls and
+would make the discourse series a function of classifier noise; labelling 334
+centroids once makes the mapping auditable in a single table. It also avoids the
+alternative failure mode, in which the researcher assigns categories to clusters
+by inspection, which would constitute self-constructed ground truth on the
+independent variable.
+
+The classifier is Mistral Nemo Instruct 2407 \cite{mistralnemo} in Q5\_K\_M
+quantization, run locally with a 4096-token context, thirty-five offloaded
+layers, temperature zero, and seed 1234. Output is constrained by a grammar
+compiled from a JSON schema \cite{willard2023}, restricting the theme field to
+seven values: fuel prices, heating and energy costs, automotive industry, road
+transport, energy policy, accidents and safety, and other. The model receives
+the eight centroid records and returns a short label and one enum value. No
+labelled examples and no fine-tuning are used. Grammar-constrained decoding at
+temperature zero makes the labelling deterministic for a fixed prompt, and
+repeated execution under seeds 1234, 5678, and 9012 returned identical community
+assignments. The reported statistics do not rest on this property in any case:
+the fuel-tag share and the fuel-record tone are derived from GDELT theme tags
+without reference to the classifier, and an independent implementation that
+never loads the model reproduces every statistic in Section~V
+(Section~III-H).
+
+\subsection{Discourse Series}
+Three monthly series are constructed, ordered from most to least
+assumption-free. The \emph{fuel-tag share} is the proportion of monthly records
+carrying an explicit fuel or energy-price tag, taken as the union of
+\texttt{FUELPRICES}, \texttt{ECON\_GASOLINEPRICE}, and
+\texttt{ECON\_HEATINGOIL}; it is independent of both the clustering and the
+language model and is therefore the primary series. The \emph{theme shares} are
+the per-month proportions of clustered records in each labelled theme. The
+\emph{fuel-record tone} is the mean GDELT tone of fuel-tagged records per month,
+which becomes more negative as coverage grows more alarmed. Tone is parsed as
+missing rather than zero on failure, so that absent tone cannot masquerade as
+neutral coverage.
+
+\subsection{External Validation Data}
+KBA registration shares are assembled from official products. Diesel counts come
+from the FZ~8 and FZ~8.5 releases \cite{kbafz8} and battery-electric and hybrid
+counts from the FZ~28 release \cite{kbafz28}. A verified reference month,
+January 2022, records 39{,}713 diesel and 20{,}892 battery-electric
+registrations out of 184{,}112 total. Shares are the category count divided by
+the monthly total, giving three series of 52 months each.
+
+\subsection{Stationarity-Aware Analysis}
+Each series is tested with the augmented Dickey-Fuller test using AIC lag
+selection \cite{dickeyfuller1979}. Because two registration series carry a unit
+root, every series is first-differenced before inference, so that all pairs
+receive identical treatment and no result can depend on a shared trend
+\cite{grangernewbold1974}. Uniform differencing sacrifices some information from
+the already-stationary series, but it provides a consistent stationary
+representation across all tested pairs and keeps the results directly
+comparable. We report both the level and the differenced analyses, because the
+difference between them is itself a finding.
+
+For each pair we compute Pearson cross-correlations across lags from minus six
+to plus six months, where a positive lag means discourse leads registrations;
+test Granger causality with an SSR-based F test up to four lags
+\cite{granger1969}; and estimate a bootstrap confidence interval for the best
+lag from 1000 resamples \cite{efron1993}. All econometric tests are computed
+with statsmodels \cite{statsmodels}. The 52-month aligned series yield 51
+observations after first differencing, which is reflected in the degrees of
+freedom of the differenced tests.
+
+We define the inferential testing family explicitly, since the correction
+depends on it. Granger tests are run on four discourse-outcome pairs, namely
+the fuel-tag share against each of the three registration shares and the
+fuel-record tone against the diesel share, at four lags each, giving sixteen
+tests per transformation. The theme-share series are not included in this
+family: as reported in Section~IV-C they are screened by cross-correlation only
+and are treated as descriptive, so they contribute no inferential tests. The
+Bonferroni threshold is therefore $0.05/16 = 0.0031$.
+Table~\ref{tab:repro} lists the full configuration.
+
+\subsection{Independent Verification}
+Because the classifier stage requires a GPU and a quantised 12B model, the
+statistical results are additionally reproduced by a second implementation that
+depends only on pandas, numpy, and statsmodels. It rebuilds the discourse series
+directly from the corpus, re-parses the KBA releases from the published FZ~8,
+FZ~8.5, and FZ~28 files, and recomputes the stationarity tests, both Granger
+transformations, the cross-correlations, the bootstrap intervals, and the
+Johansen test. The two implementations agree on every verdict and to three
+decimal places on every statistic, with residual differences arising only from a
+record-filtering step that affects 645 of 291{,}936 records. This provides a
+check on the reported figures that is independent of the classifier and of the
+GPU environment.
+
+\begin{table}[t]
+\caption{Reproducibility Configuration}
+\label{tab:repro}
+\centering \small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Element} & \textbf{Value} \\ \midrule
+Discourse source & GDELT 2.0 GKG, German fuel/energy \\
+Corpus size & 291{,}936 records (2022-01 to 2026-04) \\
+Validation gate & 275{,}880 records (94.5\,\%) fuel-tagged \\
+Embedding model & all-MiniLM-L6-v2, 384-d, L2-normalised \\
+DF cutoff & 0.40 (24 tokens removed) \\
+Community threshold & 0.70 cosine \\
+Min.\ community size & 250 records \\
+Communities & 334, covering 70.0\,\% of records \\
+Classifier & Mistral-Nemo-Instruct-2407, Q5\_K\_M \\
+Decoding & grammar-constrained JSON, temp 0 \\
+Theme enum & 7 values (see Section III-D) \\
+Seeds & 1234, 5678, 9012 (identical labels) \\
+Validation data & KBA FZ~8, FZ~8.5, FZ~28 (52 months) \\
+Stationarity test & augmented Dickey-Fuller, AIC autolag \\
+Transformation & uniform first difference \\
+Cointegration test & Johansen trace, $k_{ar}$ diff 1 \\
+Cross-correlation & Pearson, lags $-6$ to $+6$ \\
+Granger test & SSR-based F, maxlag 4 \\
+Bootstrap & 1000 resamples \\
+Verifier & verify\_values.py (pandas, numpy, \\
+ & statsmodels only) \\
+Libraries & pandas, sentence-transformers, \\
+ & llama-cpp-python, statsmodels, pdfplumber \\
+Hardware & single NVIDIA Tesla T4 GPU \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%=====================================================================
+\section{Case Study}
+%=====================================================================
+\subsection{Why the Construct Is Fuel Cost}
+The study was initially designed around powertrain-stance discourse. Diagnostic
+probes on the original manufacturer-seeded corpus of 143{,}367 records falsified
+that design: the \texttt{ELECTRIC\_VEHICLE} theme matched zero records, and
+powertrain vocabulary was effectively absent, with 331 occurrences of
+\emph{diesel}, 179 of \emph{bev}, one of \emph{hybrid}, and none of
+\emph{battery}. A stance taxonomy applied to that corpus could only have
+returned labels unsupported by the underlying text. Fuel and energy-cost tags,
+by contrast, are densely and consistently present, and fuel cost is a defensible
+economic driver of powertrain mix. The construct was therefore rescoped to what
+the instrument measurably contains. Notably, the \texttt{ELECTRIC\_VEHICLE}
+theme is absent from the fuel corpus as well, appearing on zero records in all
+52 months, so no direct electrification-stance series is available from GDELT at
+all.
+
+\subsection{Discourse Corpus Characteristics}
+Corpus volume concentrates in the 2022 European energy-price shock and a second
+spike in early 2026. Mean tone is negative in every month, ranging from $-1.19$
+to $-2.64$, consistent with the crisis framing of energy-cost news. The
+fuel-tag share is high and nearly saturated, between 0.837 and 0.987, because
+the corpus is already filtered to fuel and energy coverage, so this series
+carries limited month-to-month variation.
+
+\subsection{Theme Labelling Outcome}
+Table~\ref{tab:themes} reports the distribution of labelled themes across the
+203{,}766 clustered records. The distribution is heavily concentrated: the
+classifier assigns 87.4\,\% of clustered records to energy policy, with fuel
+prices second at 9.9\,\% and the remaining three themes together below 3\,\%.
+The concentration indicates that the theme taxonomy provides limited
+discrimination within this corpus, and that German fuel and energy discourse in
+GDELT is dominated by policy and macroeconomic framing rather than by
+consumer-facing price or transport narratives. Theme-share results are
+consequently treated as descriptive rather than inferential.
+
+\begin{table}[t]
+\caption{Labelled Theme Distribution (Clustered Records)}
+\label{tab:themes}
+\centering \small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Theme} & \textbf{Records} & \textbf{Share} \\ \midrule
+energy policy          & 178{,}063 & 87.4\,\% \\
+fuel prices            & 20{,}220  & 9.9\,\% \\
+accidents and safety   & 2{,}783   & 1.4\,\% \\
+heating and energy costs & 2{,}155 & 1.1\,\% \\
+road transport         & 545       & 0.3\,\% \\ \midrule
+Total clustered        & 203{,}766 & 100\,\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Registration Series}
+The KBA diesel share declines steadily from 0.216 in January 2022 to 0.130 in
+April 2026, with a trough of 0.108 in December 2022 coinciding with a
+battery-electric pull-forward ahead of a subsidy change. The battery-electric
+and hybrid shares rise over the window with strong seasonal and policy-driven
+spikes. These are the external outcome variables.
+
+%=====================================================================
+\section{Results}
+%=====================================================================
+\subsection{The Level Analysis and What It Appears to Show}
+Analysed as levels, the pipeline returns what looks like a positive result.
+Fuel-tag discourse correlates with the hybrid registration share at $r=-0.698$
+at a two-month lead and with the diesel share at $r=+0.500$ at a three-month
+lead. The corresponding Granger tests, reported in the upper rows of
+Table~\ref{tab:granger}, place fuel-tag discourse against the hybrid share at
+$p=0.033$ at lag two, below the conventional 0.05 threshold. Reported at this
+stage, the study would have claimed a two-month leading indicator for hybrid
+registrations.
+
+\subsection{Stationarity}
+Table~\ref{tab:adf} reports augmented Dickey-Fuller tests on the level series.
+The two discourse series and the battery-electric share are stationary, but the
+diesel share is emphatically not, at $p=0.998$, and the hybrid share is
+non-stationary at $p=0.594$. The diesel share declines monotonically and the
+hybrid share rises across the same window, so any level correlation between
+discourse and these two outcomes reflects shared trend rather than
+co-movement. The level results in Section~V-A are therefore not interpretable
+as evidence of a lead.
+
+\begin{table}[t]
+\caption{Augmented Dickey-Fuller Tests on Level Series}
+\label{tab:adf}
+\centering \small
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{Series} & \textbf{ADF} & \textbf{p} & \textbf{Verdict} \\ \midrule
+Fuel-tag share          & $-3.366$ & 0.012 & stationary \\
+Fuel-record tone        & $-2.971$ & 0.038 & stationary \\
+KBA diesel share        & $+1.701$ & 0.998 & non-stationary \\
+KBA battery-electric share & $-2.962$ & 0.039 & stationary \\
+KBA hybrid share        & $-1.376$ & 0.594 & non-stationary \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+\footnotesize The five labelled theme-share series were tested under the same
+procedure and are stationary at every conventional level ($p \le 0.0006$). They
+are omitted here because they carry no inferential tests, as declared in
+Section~III-G.
+\end{table}
+
+\subsection{Granger Causality Before and After Differencing}
+Table~\ref{tab:granger} reports SSR-based F-test p-values for each pair at lags
+one to four, in both transformations. The contrast is the central result of this
+paper. On levels, the smallest p-value across sixteen tests is 0.033. After
+first-differencing, the smallest is 0.080, and the specific cell that carried
+the level result, fuel-tag discourse against the hybrid share at lag two, rises
+from 0.033 to 0.279. A Bonferroni correction for sixteen tests sets the
+threshold at 0.0031, which no cell in either transformation approaches. On
+stationary data, no discourse series Granger-predicts any registration share.
+
+\begin{table}[t]
+\caption{Granger SSR-Based F-Test p-Values, Levels vs First-Differenced}
+\label{tab:granger}
+\centering \small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+\textbf{Discourse $\rightarrow$ share} & \textbf{Form} & \textbf{L1} &
+\textbf{L2} & \textbf{L3} & \textbf{L4} \\ \midrule
+Fuel-tag $\rightarrow$ diesel & levels & 0.132 & 0.250 & 0.110 & 0.181 \\
+                              & diff.\ & 0.716 & 0.347 & 0.370 & 0.512 \\
+Fuel-tag $\rightarrow$ BEV    & levels & 0.758 & 0.818 & 0.480 & 0.464 \\
+                              & diff.\ & 0.514 & 0.183 & 0.244 & 0.372 \\
+Fuel-tag $\rightarrow$ hybrid & levels & 0.178 & \textbf{0.033} & 0.067 & 0.067 \\
+                              & diff.\ & 0.569 & 0.279 & 0.080 & 0.229 \\
+Tone $\rightarrow$ diesel     & levels & 0.259 & 0.713 & 0.798 & 0.532 \\
+                              & diff.\ & 0.410 & 0.491 & 0.427 & 0.503 \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+\footnotesize Bold marks the only cell below 0.05, which appears in the level
+analysis only. Bonferroni threshold for 16 tests is 0.0031. $n=52$ for levels,
+$n=51$ after differencing.
+\end{table}
+
+\subsection{Cointegration and the Choice of Differencing}
+First-differencing is the appropriate treatment only if the non-stationary pairs
+do not share a long-run equilibrium relationship, since a vector error-correction
+model would otherwise preserve information that differencing discards. We
+therefore apply the Johansen trace test to the two pairs whose outcome carries a
+unit root. The trace procedure is sequential, so the first hypothesis in the
+sequence is decisive. For fuel-tag discourse against the diesel share the trace
+statistic at $r \le 0$ is 13.11 against a 95\,\% critical value of 15.49, and
+for the hybrid share it is 15.44 against the same critical value. Neither
+rejects the null of no cointegrating relationship, so the sequence terminates at
+the first step and no cointegrating vector is identified for either pair. The
+hybrid statistic falls only marginally below its critical value, and at $n=52$
+the finite-sample distribution of the trace statistic warrants caution. On this evidence there is no long-run relationship for a vector
+error-correction model to recover, so first-differencing is the appropriate
+estimator here rather than a compromise forced by sample size.
+
+\subsection{A Stationary Positive Control}
+The battery-electric share provides an internal positive control, because it is
+the one registration series already stationary in levels (Table~\ref{tab:adf},
+$p=0.039$). A genuine discourse-to-registration lead for this outcome would
+therefore be visible in the level analysis without any differencing, and would
+not be exposed to the spurious-regression mechanism that invalidates the diesel
+and hybrid level results. No such lead appears. Every level p-value for fuel-tag
+discourse against the battery-electric share exceeds 0.46
+(Table~\ref{tab:granger}), and the strongest level correlation is $+0.144$ at
+zero lag (Table~\ref{tab:boot}). The null for this category is therefore not an
+artefact of the differencing step, which supports the reading that the absence of
+a lead is a property of the discourse signal rather than of the stationarity
+correction.
+
+\subsection{Cross-Correlation and Bootstrap Confidence Intervals}
+Table~\ref{tab:boot} reports the best lag and its correlation in both
+transformations, together with the 95\,\% bootstrap confidence interval on the
+differenced series. Differencing reduces every correlation substantially: the
+hybrid pairing falls from $-0.698$ to $-0.339$, and the diesel pairing from
+$+0.500$ to $+0.255$. For all four pairings the confidence interval spans the
+entire tested window, from minus six to plus six months, and none excludes zero.
+The falsifiability criterion specified in advance, a lead time whose confidence
+interval excludes zero, is not met for any powertrain category.
+
+\begin{table}[t]
+\caption{Best-Lag Correlations and Bootstrap Confidence Intervals}
+\label{tab:boot}
+\centering \small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrrrrc@{}}
+\toprule
+& & \multicolumn{2}{c}{\textbf{Levels}} &
+\multicolumn{2}{c}{\textbf{Differenced}} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+\textbf{Discourse} & \textbf{Share} & \textbf{lag} & \textbf{$r$} &
+\textbf{lag} & \textbf{$r$} & \textbf{95\,\% CI} \\ \midrule
+Fuel-tag & diesel & $+3$ & $+0.500$ & $+3$ & $+0.255$ & $[-6,+6]$ \\
+Fuel-tag & BEV    & $0$  & $+0.144$ & $+2$ & $+0.282$ & $[-6,+6]$ \\
+Fuel-tag & hybrid & $+2$ & $-0.698$ & $+6$ & $-0.339$ & $[-6,+6]$ \\
+Tone     & diesel & $+4$ & $-0.389$ & $+4$ & $-0.231$ & $[-6,+6]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Theme-Share Series}
+The labelled theme shares were also screened against the diesel share as a
+secondary analysis. On levels the strongest associations are the fuel-prices
+theme at a six-month lag ($r=-0.448$), the energy-policy theme at a six-month
+lag ($r=+0.400$), and heating and energy costs at a three-month lag
+($r=+0.316$). All three peak at negative lags, meaning discourse follows rather
+than leads registrations, and given the concentration reported in
+Table~\ref{tab:themes} and the stationarity problem established above, we report
+these as descriptive only and draw no inference from them.
+
+%=====================================================================
+\section{Discussion}
+%=====================================================================
+\subsection{Interpretation}
+The results answer the research question in the negative. Across three discourse
+constructions and three powertrain categories, the stationarity-aware Granger
+tests show no predictive content at lags one through four, and the
+cross-correlation bootstrap intervals identify no stable lead anywhere in the
+tested window of minus six to plus six months. German fuel- and energy-cost
+discourse in GDELT shows no operationally useful lead over KBA registration
+behaviour once the series are made stationary. The Granger
+tests do not survive correction, and the bootstrap intervals are as wide as the
+search window itself, which is the signature of an estimator that cannot locate
+a stable lead. Following Popper, an experiment that could have falsified the
+leading-indicator hypothesis and did not produce a signal is evidence
+\cite{popper1959}. The threshold fixed in advance makes this a clean,
+interpretable null rather than an inconclusive one.
+
+\subsection{The Spurious-Correlation Finding}
+The most transferable result of this study is the gap between
+Table~\ref{tab:granger}'s two row types. Our pipeline, run in the configuration
+a standard lead-lag design would use, produced a correlation of $-0.698$ and a
+Granger p-value of 0.033 linking fuel discourse to hybrid registrations. Both
+series merely trend across the observation window, one falling as the energy
+shock recedes and one rising as electrification proceeds. Under differencing the
+same relationship reads $p=0.279$. Had we reported the level result, the
+headline finding of this paper would have been a two-month leading indicator
+that does not exist.
+
+This has a general implication for discourse-as-signal research. Media attention
+to a topic and the adoption curve of a related technology will frequently both
+trend over a multi-year window, so the conditions that generate spurious
+regression are the normal case rather than an edge case in this literature.
+Stationarity testing is therefore not an optional refinement but a precondition
+for interpreting any lead-lag claim of this kind. We report both analyses so
+that the magnitude of the correction is visible.
+
+\subsection{Why the Null Is Scientifically Valuable}
+A negative result under a falsifiable threshold specified in advance is a
+contribution rather than a shortfall. Three points support this. First,
+research on discourse-based prediction is exposed to publication bias, since
+positive findings are reported far more readily than null ones, and a documented
+null corrects the record and spares others a redundant search. Second, we
+constrain analyst degrees of freedom by fixing the hypothesis and threshold in
+advance, reporting the full test grid rather than its smallest cell, and
+applying a Bonferroni correction, which together guard against p-hacking. Third,
+our own data show that the largest apparent effect in the study is an artefact,
+so a discipline that rejects such correlations is exactly what
+discourse-based OSINT forecasting requires.
+
+\subsection{Comparison with Prior Work}
+Our null appears to contrast with the sentiment-predicts-sales literature
+\cite{shao2025}, \cite{liu2025}, but the two are not in direct conflict. That
+literature uses curated sentiment corpora and targets aggregate sales, whereas
+we test an open event stream at powertrain granularity against official
+registration shares, on stationary data, under a falsifiable threshold. Our
+finding is consistent with the observation in \cite{wijnhoven2017} that raw
+discourse volume and generic sentiment often carry little predictive power once
+a strong outcome baseline is present.
+
+\subsection{Threats to Validity and Limitations}
+Several limitations qualify the result without overturning it.
+
+\emph{Single market.} The study covers Germany alone through KBA data, so the
+null does not generalise to other national markets or regulatory regimes without
+replication.
+
+\emph{Observation window.} Fifty-two months is short for Granger analysis, and
+51 after differencing. Power is limited, and the window overlaps the post-2022
+energy shock, so the single uncorrected differenced result at lag three is best
+read as noise.
+
+\emph{Corpus saturation and vocabulary coverage.} The corpus is pre-filtered to
+fuel and energy coverage, so the fuel-tag share varies within a narrow band and
+volume is driven by the exogenous news cycle rather than consumer intent. GDELT
+tags no explicit electric-vehicle vocabulary in this corpus, so the electrified
+categories are tested only through fuel-cost proxies.
+
+\emph{Theme concentration.} The classifier assigned 87.4\,\% of clustered
+records to a single theme, which limits the discriminative value of the
+theme-share series and is why we treat those results as descriptive.
+
+\emph{Classifier variance.} Repeated labelling under three seeds returned
+identical assignments, which is expected given deterministic decoding, and the
+reported statistics are independent of the classifier in any case. This bounds
+only the labelling step. It does not establish that a different embedding model,
+similarity threshold, or theme taxonomy would recover the same communities, and
+that broader sensitivity analysis is not attempted here.
+
+\emph{Omitted variables.} Bivariate Granger causality does not control for
+subsidies, list prices, supply constraints, or seasonality, any of which could
+drive both series.
+
+%=====================================================================
+\section{Conclusion and Future Work}
+%=====================================================================
+We asked whether the intensity, thematic composition, and tone of German fuel-
+and energy-cost discourse in GDELT lead KBA registration shifts across diesel,
+battery-electric, and hybrid powertrain categories, and whether any lead is
+operationally useful. The answer is no on all counts. A level-based analysis
+appeared to identify a two-month leading indicator for hybrid registrations,
+with $r=-0.698$ and $p=0.033$, but augmented Dickey-Fuller tests show the
+registration series carry a unit root, and after first-differencing the same
+relationship reads $p=0.279$. No differenced result approaches the
+Bonferroni-corrected threshold of 0.0031, and every best-lag confidence interval
+spans the full search window, so the falsifiable threshold is not met. Beyond
+the null, the study contributes a community-then-label pipeline that avoids both
+per-record classifier drift and hand-assigned labels, and a documented
+demonstration that stationarity testing removes a false discovery that this
+design would otherwise have reported.
+
+Several directions follow. Establishing three-run variance bounds across
+independent seeds is the immediate next step. A multi-country design using
+additional registries, such as the European ACEA series, would test
+generalisability. A discourse source carrying explicit powertrain vocabulary,
+such as specialist automotive or trade press, social-media streams, or policy
+documents, could supply the electrification signal GDELT lacks. On the
+modelling side, cointegration testing with a longer window, Bayesian structural
+time series, and formal causal-inference designs would strengthen
+identification beyond bivariate Granger tests, and a multimodal extension
+combining discourse with price and policy series is a natural next step. In each
+case the validation framework introduced here provides the baseline against
+which a claimed leading indicator must be judged.
+
+%=====================================================================
+\begin{thebibliography}{00}
+
+\bibitem{wijnhoven2017} F. Wijnhoven and O. Plant, ``Sentiment analysis and
+Google Trends data for predicting car sales,'' in \emph{Proc. 38th Int. Conf.
+Information Systems (ICIS)}, Seoul, South Korea, 2017.
+
+\bibitem{shao2025} J. Shao, J. Hong, M. Wang, and X. Wang, ``New energy
+vehicles sales forecasting using machine learning: The role of media
+sentiment,'' \emph{Computers \& Industrial Engineering}, vol.~201, 2025,
+Art.~110928. [Online]. Available: https://doi.org/10.1016/j.cie.2025.110928
+
+\bibitem{liu2025} J. Liu, H. Pan, R. Luo, H. Chen, Z. Tao, and Z. Wu, ``An
+electric vehicle sales hybrid forecasting method based on improved sentiment
+analysis model and secondary decomposition,'' \emph{Engineering Applications of
+Artificial Intelligence}, vol.~150, 2025, Art.~110561. [Online]. Available:
+https://doi.org/10.1016/j.engappai.2025.110561
+
+\bibitem{gdelt2013} K. Leetaru and P. A. Schrodt, ``GDELT: Global data on
+events, location, and tone, 1979--2012,'' in \emph{Proc. Int. Studies Assoc.
+Annu. Conv.}, San Francisco, CA, USA, 2013.
+
+\bibitem{gentzkow2019} M. Gentzkow, B. Kelly, and M. Taddy, ``Text as data,''
+\emph{Journal of Economic Literature}, vol.~57, no.~3, pp.~535--574, 2019.
+[Online]. Available: https://doi.org/10.1257/jel.20181020
+
+\bibitem{kalamara2022} E. Kalamara, A. Turrell, C. Redl, G. Kapetanios, and
+S. Kapadia, ``Making text count: Economic forecasting using newspaper text,''
+\emph{Journal of Applied Econometrics}, vol.~37, no.~5, pp.~896--919, 2022.
+[Online]. Available: https://doi.org/10.1002/jae.2907
+
+\bibitem{tilly2021} S. Tilly and G. Livan, ``Macroeconomic forecasting with
+statistically validated knowledge graphs,'' arXiv:2104.10457, 2021. [Online].
+Available: https://arxiv.org/abs/2104.10457
+
+\bibitem{informer2021} H. Zhou, S. Zhang, J. Peng, S. Zhang, J. Li, H. Xiong,
+and W. Zhang, ``Informer: Beyond efficient transformer for long sequence
+time-series forecasting,'' in \emph{Proc. AAAI Conf. Artificial Intelligence},
+vol.~35, no.~12, 2021, pp.~11106--11115. [Online]. Available:
+https://doi.org/10.1609/aaai.v35i12.17325
+
+\bibitem{gruver2023} N. Gruver, M. Finzi, S. Qiu, and A. G. Wilson, ``Large
+language models are zero-shot time series forecasters,'' in \emph{Adv. Neural
+Inf. Process. Syst. (NeurIPS)}, vol.~36, 2023, arXiv:2310.07820. [Online].
+Available: https://arxiv.org/abs/2310.07820
+
+\bibitem{embers2014} N. Ramakrishnan \emph{et al.}, ```Beating the news' with
+EMBERS: Forecasting civil unrest using open source indicators,'' in \emph{Proc.
+20th ACM SIGKDD Int. Conf. Knowledge Discovery and Data Mining (KDD)}, New
+York, NY, USA, 2014, pp.~1799--1808.
+
+\bibitem{bollen2011} J. Bollen, H. Mao, and X. Zeng, ``Twitter mood predicts
+the stock market,'' \emph{Journal of Computational Science}, vol.~2, no.~1,
+pp.~1--8, 2011. [Online]. Available:
+https://doi.org/10.1016/j.jocs.2010.12.007
+
+\bibitem{osint2020} J. Pastor-Galindo, P. Nespoli, F. G\'omez M\'armol, and
+G. Mart\'inez P\'erez, ``The not yet exploited goldmine of OSINT:
+Opportunities, open challenges and future trends,'' \emph{IEEE Access},
+vol.~8, pp.~10282--10304, 2020. [Online]. Available:
+https://doi.org/10.1109/ACCESS.2020.2965257
+
+\bibitem{brown2020} T. B. Brown \emph{et al.}, ``Language models are few-shot
+learners,'' in \emph{Adv. Neural Inf. Process. Syst. (NeurIPS)}, vol.~33, 2020,
+pp.~1877--1901.
+
+\bibitem{willard2023} B. T. Willard and R. Louf, ``Efficient guided generation
+for large language models,'' arXiv:2307.09702, 2023. [Online]. Available:
+https://arxiv.org/abs/2307.09702
+
+\bibitem{reimers2019} N. Reimers and I. Gurevych, ``Sentence-BERT: Sentence
+embeddings using Siamese BERT-networks,'' in \emph{Proc. 2019 Conf. Empirical
+Methods in Natural Language Processing (EMNLP-IJCNLP)}, Hong Kong, 2019,
+pp.~3982--3992. [Online]. Available: https://doi.org/10.18653/v1/D19-1410
+
+\bibitem{mistralnemo} Mistral AI and NVIDIA, ``Mistral NeMo,'' Mistral AI Blog,
+Jul.~2024. [Online]. Available: https://mistral.ai/news/mistral-nemo (accessed
+Aug.~7, 2026).
+
+\bibitem{granger1969} C. W. J. Granger, ``Investigating causal relations by
+econometric models and cross-spectral methods,'' \emph{Econometrica}, vol.~37,
+no.~3, pp.~424--438, 1969. [Online]. Available:
+https://doi.org/10.2307/1912791
+
+\bibitem{efron1993} B. Efron and R. J. Tibshirani, \emph{An Introduction to the
+Bootstrap}. New York, NY, USA: Chapman \& Hall, 1993.
+
+\bibitem{grangernewbold1974} C. W. J. Granger and P. Newbold, ``Spurious
+regressions in econometrics,'' \emph{Journal of Econometrics}, vol.~2, no.~2,
+pp.~111--120, 1974. [Online]. Available:
+https://doi.org/10.1016/0304-4076(74)90034-7
+
+\bibitem{dickeyfuller1979} D. A. Dickey and W. A. Fuller, ``Distribution of the
+estimators for autoregressive time series with a unit root,'' \emph{Journal of
+the American Statistical Association}, vol.~74, no.~366, pp.~427--431, 1979.
+[Online]. Available: https://doi.org/10.2307/2286348
+
+\bibitem{mobility2021} S. Sinha and M. Chakraborty, ``Causal analysis and
+prediction of human mobility in the U.S. during the COVID-19 pandemic,''
+arXiv:2111.12272, 2021. [Online]. Available: https://arxiv.org/abs/2111.12272
+
+\bibitem{algaba2020} A. Algaba, D. Ardia, K. Bluteau, S. Borms, and K. Boudt,
+``Econometrics meets sentiment: An overview of methodology and applications,''
+\emph{Journal of Economic Surveys}, vol.~34, no.~3, pp.~512--547, 2020.
+[Online]. Available: https://doi.org/10.1111/joes.12370
+
+\bibitem{kbafz8} Kraftfahrt-Bundesamt, ``Neuzulassungen von Kraftfahrzeugen
+nach Kraftstoffarten (FZ~8, FZ~8.5),'' Flensburg, Germany. [Online].
+Available: https://www.kba.de (accessed Aug.~7, 2026).
+
+\bibitem{kbafz28} Kraftfahrt-Bundesamt, ``Neuzulassungen von
+Personenkraftwagen nach ausgew\"ahlten Merkmalen (FZ~28),'' Flensburg,
+Germany. [Online]. Available: https://www.kba.de (accessed Aug.~7, 2026).
+
+\bibitem{statsmodels} S. Seabold and J. Perktold, ``Statsmodels: Econometric
+and statistical modeling with Python,'' in \emph{Proc. 9th Python in Science
+Conf.}, Austin, TX, USA, 2010, pp.~92--96.
+
+\bibitem{popper1959} K. R. Popper, \emph{The Logic of Scientific Discovery}.
+London, UK: Hutchinson, 1959.
+
+\end{thebibliography}
+
+\end{document}
